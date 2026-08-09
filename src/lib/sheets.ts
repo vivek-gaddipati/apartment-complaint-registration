@@ -314,3 +314,91 @@ export async function resetOwnerPin(flatNo: string): Promise<void> {
   await setOwnerPin(flatNo, "");
 }
 
+function ownerToRow(o: Partial<Owner>): string[] {
+  return OWNER_COLUMNS.map((key) => (o[key] ?? "") as string);
+}
+
+/** Creates a new owner row. Throws if flat_no already exists (case-insensitive). */
+export async function createOwner(
+  flatNo: string,
+  ownerName: string,
+  phone: string
+): Promise<Owner> {
+  const existing = await getOwnerByFlat(flatNo);
+  if (existing) {
+    throw new Error(`Flat already exists: ${flatNo}`);
+  }
+
+  const owner: Owner = {
+    flat_no: flatNo.trim(),
+    owner_name: ownerName.trim(),
+    pin: "",
+    phone: phone.trim(),
+    rowIndex: -1,
+  };
+
+  if (!hasGoogleCredentials()) {
+    const rowIndex = mockOwners.length;
+    mockOwners.push({ ...owner, rowIndex });
+    return { ...owner, rowIndex };
+  }
+
+  const sheets = getClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: getSheetId(),
+    range: `${OWNERS_TAB}!A:D`,
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: [ownerToRow(owner)] },
+  });
+
+  return owner;
+}
+
+/** Updates owner_name and phone for a flat. Never reads or writes the pin column. */
+export async function updateOwnerDetails(
+  flatNo: string,
+  updates: { owner_name: string; phone: string }
+): Promise<Owner> {
+  const owner = await getOwnerByFlat(flatNo);
+  if (!owner) throw new Error(`Unknown flat: ${flatNo}`);
+
+  const merged: Owner = {
+    ...owner,
+    owner_name: updates.owner_name.trim(),
+    phone: updates.phone.trim(),
+  };
+
+  if (!hasGoogleCredentials()) {
+    const idx = mockOwners.findIndex(
+      (o) => o.flat_no.trim().toLowerCase() === flatNo.trim().toLowerCase()
+    );
+    if (idx !== -1) {
+      mockOwners[idx] = {
+        ...mockOwners[idx],
+        owner_name: merged.owner_name,
+        phone: merged.phone,
+      };
+    }
+    return merged;
+  }
+
+  const sheets = getClient();
+  const sheetRow = owner.rowIndex + 2;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: getSheetId(),
+    range: `${OWNERS_TAB}!B${sheetRow}:B${sheetRow}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[merged.owner_name]] },
+  });
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: getSheetId(),
+    range: `${OWNERS_TAB}!D${sheetRow}:D${sheetRow}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[merged.phone]] },
+  });
+
+  return merged;
+}
