@@ -19,6 +19,7 @@ export default function AdminOwnersClient({
   const [searchQuery, setSearchQuery] = useState("");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [savingFlat, setSavingFlat] = useState<string | null>(null);
+  const [editedValues, setEditedValues] = useState<Record<string, { ownerName?: string; phone?: string }>>({});
 
   const [newFlatNo, setNewFlatNo] = useState("");
   const [newOwnerName, setNewOwnerName] = useState("");
@@ -87,8 +88,19 @@ export default function AdminOwnersClient({
         }),
       });
       if (res.ok) {
+        const data = await res.json();
+        setOwners((prev) =>
+          prev.map((o) => (o.flat_no === flatNo ? data.owner : o))
+        );
         showToast(`Updated Flat ${flatNo}.`);
+        return true;
+      } else {
+        showToast(`Failed to save Flat ${flatNo}.`);
+        return false;
       }
+    } catch {
+      showToast(`Failed to save Flat ${flatNo}.`);
+      return false;
     } finally {
       setSavingFlat(null);
     }
@@ -204,15 +216,44 @@ export default function AdminOwnersClient({
                   </td>
                   <td className="px-4 py-3">
                     <input
-                      defaultValue={o.owner_name}
+                      value={editedValues[o.flat_no]?.ownerName ?? o.owner_name}
                       disabled={savingFlat === o.flat_no}
-                      onBlur={(e) => {
-                        if (e.target.value !== o.owner_name && e.target.value.trim()) {
-                          const updated = { ...o, owner_name: e.target.value };
-                          setOwners((prev) =>
-                            prev.map((row) => (row.flat_no === o.flat_no ? updated : row))
-                          );
-                          saveDetails(o.flat_no, e.target.value, o.phone);
+                      onChange={(e) => {
+                        setEditedValues((prev) => ({
+                          ...prev,
+                          [o.flat_no]: { ...(prev[o.flat_no] || {}), ownerName: e.target.value }
+                        }));
+                      }}
+                      onBlur={async (e) => {
+                        const newValue = e.target.value;
+                        if (newValue !== o.owner_name && newValue.trim()) {
+                          const phone = editedValues[o.flat_no]?.phone ?? o.phone;
+                          const success = await saveDetails(o.flat_no, newValue, phone);
+                          if (!success) {
+                            // Reset to original value on failure by clearing edited value
+                            setEditedValues((prev) => {
+                              const newObj = { ...prev };
+                              if (newObj[o.flat_no]) {
+                                delete newObj[o.flat_no].ownerName;
+                                if (Object.keys(newObj[o.flat_no]).length === 0) {
+                                  delete newObj[o.flat_no];
+                                }
+                              }
+                              return newObj;
+                            });
+                          } else {
+                            // Clear edited value on success
+                            setEditedValues((prev) => {
+                              const newObj = { ...prev };
+                              if (newObj[o.flat_no]) {
+                                delete newObj[o.flat_no].ownerName;
+                                if (Object.keys(newObj[o.flat_no]).length === 0) {
+                                  delete newObj[o.flat_no];
+                                }
+                              }
+                              return newObj;
+                            });
+                          }
                         }
                       }}
                       className="input-dark w-48 rounded-lg px-2 py-1 text-xs text-white"
@@ -220,15 +261,44 @@ export default function AdminOwnersClient({
                   </td>
                   <td className="px-4 py-3">
                     <input
-                      defaultValue={o.phone}
+                      value={editedValues[o.flat_no]?.phone ?? o.phone}
                       disabled={savingFlat === o.flat_no}
-                      onBlur={(e) => {
-                        if (e.target.value !== o.phone) {
-                          const updated = { ...o, phone: e.target.value };
-                          setOwners((prev) =>
-                            prev.map((row) => (row.flat_no === o.flat_no ? updated : row))
-                          );
-                          saveDetails(o.flat_no, o.owner_name, e.target.value);
+                      onChange={(e) => {
+                        setEditedValues((prev) => ({
+                          ...prev,
+                          [o.flat_no]: { ...(prev[o.flat_no] || {}), phone: e.target.value }
+                        }));
+                      }}
+                      onBlur={async (e) => {
+                        const newValue = e.target.value;
+                        if (newValue !== o.phone) {
+                          const ownerName = editedValues[o.flat_no]?.ownerName ?? o.owner_name;
+                          const success = await saveDetails(o.flat_no, ownerName, newValue);
+                          if (!success) {
+                            // Reset to original value on failure by clearing edited value
+                            setEditedValues((prev) => {
+                              const newObj = { ...prev };
+                              if (newObj[o.flat_no]) {
+                                delete newObj[o.flat_no].phone;
+                                if (Object.keys(newObj[o.flat_no]).length === 0) {
+                                  delete newObj[o.flat_no];
+                                }
+                              }
+                              return newObj;
+                            });
+                          } else {
+                            // Clear edited value on success
+                            setEditedValues((prev) => {
+                              const newObj = { ...prev };
+                              if (newObj[o.flat_no]) {
+                                delete newObj[o.flat_no].phone;
+                                if (Object.keys(newObj[o.flat_no]).length === 0) {
+                                  delete newObj[o.flat_no];
+                                }
+                              }
+                              return newObj;
+                            });
+                          }
                         }
                       }}
                       className="input-dark w-36 rounded-lg px-2 py-1 text-xs text-white"
