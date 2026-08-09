@@ -233,6 +233,12 @@ export default function AdminDashboardClient({
             🔑 Manage PINs
           </button>
           <Link
+            href="/admin/owners"
+            className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition"
+          >
+            🏠 Manage Owners
+          </Link>
+          <Link
             href="/admin/report"
             className="rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-sky-600/30 hover:from-sky-500 hover:to-blue-500 transition"
           >
