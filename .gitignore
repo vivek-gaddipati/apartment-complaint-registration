@@ -1,0 +1,15 @@
+node_modules
+.next
+out
+.env
+.env.local
+*.log
+.DS_Store
+*service-account*.json
+*service_account*.json
+google_sheets.json
+gen-lang-client-*.json
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
