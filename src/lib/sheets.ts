@@ -352,7 +352,11 @@ export async function createOwner(
     requestBody: { values: [ownerToRow(owner)] },
   });
 
-  return owner;
+  const fetched = await getOwnerByFlat(flatNo);
+  if (!fetched) {
+    throw new Error(`Failed to retrieve created owner row for flat: ${flatNo}`);
+  }
+  return fetched;
 }
 
 /** Updates owner_name and phone for a flat. Never reads or writes the pin column. */
