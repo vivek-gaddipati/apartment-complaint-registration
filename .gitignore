@@ -13,3 +13,4 @@ gen-lang-client-*.json
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+/.superpowers/
