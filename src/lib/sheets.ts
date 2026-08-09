@@ -344,10 +344,14 @@ export async function createOwner(
   }
 
   const sheets = getClient();
+  // RAW, not USER_ENTERED: admin-typed free text must be stored verbatim. A
+  // flat_no like "3/4" would otherwise be parsed as a date and a phone like
+  // "0987654321" would lose its leading zero — and flat_no is the immutable
+  // join key against Complaints.
   await sheets.spreadsheets.values.append({
     spreadsheetId: getSheetId(),
     range: `${OWNERS_TAB}!A:D`,
-    valueInputOption: "USER_ENTERED",
+    valueInputOption: "RAW",
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [ownerToRow(owner)] },
   });
@@ -359,19 +363,31 @@ export async function createOwner(
   return fetched;
 }
 
-/** Updates owner_name and phone for a flat. Never reads or writes the pin column. */
+/**
+ * Updates owner_name and/or phone for a flat. Both fields are optional: only the
+ * columns explicitly present in `updates` are written, so a caller editing one
+ * field can never clobber a concurrent edit to the other. Never reads or writes
+ * the pin column.
+ */
 export async function updateOwnerDetails(
   flatNo: string,
-  updates: { owner_name: string; phone: string }
+  updates: { owner_name?: string; phone?: string }
 ): Promise<Owner> {
   const owner = await getOwnerByFlat(flatNo);
   if (!owner) throw new Error(`Unknown flat: ${flatNo}`);
 
+  const updatingName = updates.owner_name !== undefined;
+  const updatingPhone = updates.phone !== undefined;
+
   const merged: Owner = {
     ...owner,
-    owner_name: updates.owner_name.trim(),
-    phone: updates.phone.trim(),
+    owner_name: updatingName ? updates.owner_name!.trim() : owner.owner_name,
+    phone: updatingPhone ? updates.phone!.trim() : owner.phone,
   };
+
+  if (!updatingName && !updatingPhone) {
+    return merged;
+  }
 
   if (!hasGoogleCredentials()) {
     const idx = mockOwners.findIndex(
@@ -380,8 +396,8 @@ export async function updateOwnerDetails(
     if (idx !== -1) {
       mockOwners[idx] = {
         ...mockOwners[idx],
-        owner_name: merged.owner_name,
-        phone: merged.phone,
+        ...(updatingName ? { owner_name: merged.owner_name } : {}),
+        ...(updatingPhone ? { phone: merged.phone } : {}),
       };
     }
     return merged;
@@ -389,20 +405,33 @@ export async function updateOwnerDetails(
 
   const sheets = getClient();
   const sheetRow = owner.rowIndex + 2;
+  const nameRange = `${OWNERS_TAB}!B${sheetRow}:B${sheetRow}`;
+  const phoneRange = `${OWNERS_TAB}!D${sheetRow}:D${sheetRow}`;
 
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: getSheetId(),
-    range: `${OWNERS_TAB}!B${sheetRow}:B${sheetRow}`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values: [[merged.owner_name]] },
-  });
-
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: getSheetId(),
-    range: `${OWNERS_TAB}!D${sheetRow}:D${sheetRow}`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values: [[merged.phone]] },
-  });
+  // RAW so admin-typed text (e.g. a phone with a leading zero) is stored verbatim.
+  if (updatingName && updatingPhone) {
+    // One batched call: both columns land together or not at all, and it costs
+    // a single round-trip instead of two.
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: getSheetId(),
+      requestBody: {
+        valueInputOption: "RAW",
+        data: [
+          { range: nameRange, values: [[merged.owner_name]] },
+          { range: phoneRange, values: [[merged.phone]] },
+        ],
+      },
+    });
+  } else {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: getSheetId(),
+      range: updatingName ? nameRange : phoneRange,
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[updatingName ? merged.owner_name : merged.phone]],
+      },
+    });
+  }
 
   return merged;
 }

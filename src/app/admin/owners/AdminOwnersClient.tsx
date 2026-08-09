@@ -74,18 +74,37 @@ export default function AdminOwnersClient({
     }
   }
 
-  async function saveDetails(flatNo: string, ownerName: string, phone: string) {
+  /** Drops a pending inline edit so the input falls back to the row's server value. */
+  function clearEditedValue(flatNo: string, field: "ownerName" | "phone") {
+    setEditedValues((prev) => {
+      const row = prev[flatNo];
+      if (!row || row[field] === undefined) return prev;
+      const nextRow = { ...row };
+      delete nextRow[field];
+      const next = { ...prev };
+      if (Object.keys(nextRow).length === 0) {
+        delete next[flatNo];
+      } else {
+        next[flatNo] = nextRow;
+      }
+      return next;
+    });
+  }
+
+  /**
+   * Sends only the field(s) the admin actually edited, so a save never carries
+   * (and never overwrites the Sheet with) stale values for untouched fields.
+   */
+  async function saveDetails(
+    flatNo: string,
+    updates: { owner_name?: string; phone?: string }
+  ) {
     setSavingFlat(flatNo);
     try {
       const res = await fetch("/api/admin/owners", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "update",
-          flat_no: flatNo,
-          owner_name: ownerName,
-          phone,
-        }),
+        body: JSON.stringify({ action: "update", flat_no: flatNo, ...updates }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -182,7 +201,10 @@ export default function AdminOwnersClient({
           </button>
         </form>
         {addError && (
-          <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-400">
+          <div
+            data-testid="add-owner-error"
+            className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-400"
+          >
             {addError}
           </div>
         )}
@@ -226,35 +248,21 @@ export default function AdminOwnersClient({
                       }}
                       onBlur={async (e) => {
                         const newValue = e.target.value;
-                        if (newValue !== o.owner_name && newValue.trim()) {
-                          const phone = editedValues[o.flat_no]?.phone ?? o.phone;
-                          const success = await saveDetails(o.flat_no, newValue, phone);
-                          if (!success) {
-                            // Reset to original value on failure by clearing edited value
-                            setEditedValues((prev) => {
-                              const newObj = { ...prev };
-                              if (newObj[o.flat_no]) {
-                                delete newObj[o.flat_no].ownerName;
-                                if (Object.keys(newObj[o.flat_no]).length === 0) {
-                                  delete newObj[o.flat_no];
-                                }
-                              }
-                              return newObj;
-                            });
-                          } else {
-                            // Clear edited value on success
-                            setEditedValues((prev) => {
-                              const newObj = { ...prev };
-                              if (newObj[o.flat_no]) {
-                                delete newObj[o.flat_no].ownerName;
-                                if (Object.keys(newObj[o.flat_no]).length === 0) {
-                                  delete newObj[o.flat_no];
-                                }
-                              }
-                              return newObj;
-                            });
+                        if (!newValue.trim()) {
+                          // Don't leave an empty pending edit sitting in the box
+                          // as if it were saved — snap back to the real value.
+                          clearEditedValue(o.flat_no, "ownerName");
+                          if (newValue !== o.owner_name) {
+                            showToast("Owner name cannot be empty.");
                           }
+                          return;
                         }
+                        if (newValue !== o.owner_name) {
+                          await saveDetails(o.flat_no, { owner_name: newValue });
+                        }
+                        // Either way the input now mirrors the server row: on
+                        // success the saved value, on failure the old one.
+                        clearEditedValue(o.flat_no, "ownerName");
                       }}
                       className="input-dark w-48 rounded-lg px-2 py-1 text-xs text-white"
                     />
@@ -272,34 +280,9 @@ export default function AdminOwnersClient({
                       onBlur={async (e) => {
                         const newValue = e.target.value;
                         if (newValue !== o.phone) {
-                          const ownerName = editedValues[o.flat_no]?.ownerName ?? o.owner_name;
-                          const success = await saveDetails(o.flat_no, ownerName, newValue);
-                          if (!success) {
-                            // Reset to original value on failure by clearing edited value
-                            setEditedValues((prev) => {
-                              const newObj = { ...prev };
-                              if (newObj[o.flat_no]) {
-                                delete newObj[o.flat_no].phone;
-                                if (Object.keys(newObj[o.flat_no]).length === 0) {
-                                  delete newObj[o.flat_no];
-                                }
-                              }
-                              return newObj;
-                            });
-                          } else {
-                            // Clear edited value on success
-                            setEditedValues((prev) => {
-                              const newObj = { ...prev };
-                              if (newObj[o.flat_no]) {
-                                delete newObj[o.flat_no].phone;
-                                if (Object.keys(newObj[o.flat_no]).length === 0) {
-                                  delete newObj[o.flat_no];
-                                }
-                              }
-                              return newObj;
-                            });
-                          }
+                          await saveDetails(o.flat_no, { phone: newValue });
                         }
+                        clearEditedValue(o.flat_no, "phone");
                       }}
                       className="input-dark w-36 rounded-lg px-2 py-1 text-xs text-white"
                     />
