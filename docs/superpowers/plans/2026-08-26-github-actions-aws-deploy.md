@@ -800,9 +800,11 @@ Open `https://<the domain from Step 1>/owner` in a browser. Enter a real flat nu
 
 Open `https://<the domain>/admin`, log in with the real `ADMIN_PASSWORD` (the same one stored in SSM), confirm the dashboard loads, confirm `/admin/owners` loads and shows the full owner list, confirm the "Manage Owners" add/edit flow works against the real Sheet.
 
-- [ ] **Step 4: Smoke-test the AI insights report**
+- [ ] **Step 4: Confirm the AI insights report path, via CloudWatch Logs, not the UI**
 
-From `/admin/report`, generate a report and confirm it returns a real Claude-generated summary (proves `ANTHROPIC_API_KEY` loaded correctly via the SSM wrapper).
+`ANTHROPIC_API_KEY` is a placeholder (`"not-configured"`) — `src/lib/claude.ts`'s `generateInsightsReport` catches any Anthropic API failure and silently falls back to a locally-computed report, returning a normal 200 with a plausible-looking summary. So clicking "Generate Report" in the UI and seeing *any* report — even one that reads like real prose — proves nothing about whether the SSM-sourced key loaded correctly; it will look identical whether the key is real, wrong, or missing.
+
+Instead: from `/admin/report`, generate a report, then check CloudWatch Logs for the `ServerFunction` (`aws logs tail /aws/lambda/complaint-app-server-227912367863 --since 5m --region us-east-1` or via the console) for the line `Claude API call failed, using local analytics calculation:` — its presence confirms the fallback fired (expected, given the placeholder key) and that this code path executes without crashing the request. When a real `ANTHROPIC_API_KEY` is installed later, re-run this step and confirm that log line does *not* appear — that's the actual proof the real key loaded and was used.
 
 - [ ] **Step 5: Confirm cold-start config loading works**
 
