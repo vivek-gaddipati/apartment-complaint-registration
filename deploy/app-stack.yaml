@@ -125,6 +125,14 @@ Resources:
       TargetFunctionArn: !GetAtt ServerFunction.Arn
       AuthType: NONE
 
+  ServerFunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunctionUrl
+      FunctionName: !Ref ServerFunction
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
   # ---------------------------------------------------------------------
   # CloudFront
   # ---------------------------------------------------------------------
