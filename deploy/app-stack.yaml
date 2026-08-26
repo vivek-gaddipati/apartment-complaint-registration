@@ -97,8 +97,8 @@ Resources:
       FunctionName: !Sub "complaint-app-server-${AWS::AccountId}"
       Runtime: nodejs20.x
       Handler: bootstrap-handler.handler
-      MemorySize: 512
-      Timeout: 15
+      MemorySize: 1024
+      Timeout: 30
       Role: !GetAtt ServerFunctionRole.Arn
       Code:
         # Placeholder — this inline stub is never what serves real traffic.
