@@ -1,0 +1,207 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  complaint-app production infrastructure: S3 (static assets) + Lambda
+  (OpenNext server, via the SSM-sourced-config wrapper) + CloudFront
+  (routes between them). No custom domain, single environment.
+
+Parameters:
+  SsmParameterPrefix:
+    Type: String
+    Default: /complaint-app/prod/
+    AllowedPattern: "^/.*/$"
+    Description: >
+      Path prefix under which the app's 6 config values live in SSM
+      Parameter Store (all SecureString). Must end with a trailing slash.
+
+Resources:
+  # ---------------------------------------------------------------------
+  # Static assets
+  # ---------------------------------------------------------------------
+  AssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "complaint-app-assets-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  AssetsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AssetsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontReadViaOAC
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${AssetsBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+
+  S3OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "complaint-app-s3-oac-${AWS::AccountId}"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ---------------------------------------------------------------------
+  # Server Lambda
+  # ---------------------------------------------------------------------
+  ServerFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "complaint-app-server-role-${AWS::AccountId}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: complaint-app-server-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Logs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - Sid: ReadAppConfigFromSsm
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SsmParameterPrefix}*"
+              - Sid: DecryptAppConfig
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub "ssm.${AWS::Region}.amazonaws.com"
+
+  ServerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "complaint-app-server-${AWS::AccountId}"
+      Runtime: nodejs20.x
+      Handler: bootstrap-handler.handler
+      MemorySize: 1024
+      Timeout: 30
+      Role: !GetAtt ServerFunctionRole.Arn
+      Code:
+        # Placeholder — this inline stub is never what serves real traffic.
+        # The GitHub Actions deploy workflow always overwrites this
+        # function's code afterward via a separate
+        # `aws lambda update-function-code` call (Task 4, not part of this
+        # template). This minimal inline stub only exists so the template
+        # is valid and deployable in isolation (e.g. for `sam validate`).
+        ZipFile: |
+          exports.handler = async () => ({
+            statusCode: 200,
+            body: "placeholder — deploy via GitHub Actions to replace this",
+          });
+      Environment:
+        Variables:
+          SSM_PARAMETER_PREFIX: !Ref SsmParameterPrefix
+      Layers:
+        - !Sub "{{resolve:ssm:/aws/service/aws-parameters-and-secrets-lambda-extension/x86/latest}}"
+
+  ServerFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt ServerFunction.Arn
+      AuthType: NONE
+
+  ServerFunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunctionUrl
+      FunctionName: !Ref ServerFunction
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+  # ---------------------------------------------------------------------
+  # CloudFront
+  # ---------------------------------------------------------------------
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        HttpVersion: http2
+        Origins:
+          - Id: s3-assets
+            DomainName: !GetAtt AssetsBucket.RegionalDomainName
+            OriginPath: /_assets
+            OriginAccessControlId: !GetAtt S3OriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+          - Id: lambda-server
+            # Function URLs are exposed as HTTPS hostnames of the form
+            # <url-id>.lambda-url.<region>.on.aws — strip the leading
+            # "https://" and trailing "/" that FunctionUrl returns.
+            DomainName: !Select
+              - 2
+              - !Split
+                - "/"
+                - !GetAtt ServerFunctionUrl.FunctionUrl
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols:
+                - TLSv1.2
+        DefaultCacheBehavior:
+          TargetOriginId: lambda-server
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+          Compress: true
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # AWS Managed-CachingDisabled
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AWS Managed-AllViewerExceptHostHeader
+        CacheBehaviors:
+          # Order matters: CloudFront evaluates behaviors top-to-bottom and
+          # uses the first match. _next/data/* must be listed before the
+          # broader _next/* pattern below, exactly matching the order
+          # OpenNext's own build manifest lists them in (verified this
+          # session) — otherwise data-fetch requests would incorrectly
+          # fall through to the S3 origin, which doesn't have them.
+          - PathPattern: _next/data/*
+            TargetOriginId: lambda-server
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            Compress: true
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader
+          - PathPattern: BUILD_ID
+            TargetOriginId: s3-assets
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # AWS Managed-CachingOptimized
+          - PathPattern: _next/*
+            TargetOriginId: s3-assets
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized
+
+Outputs:
+  DistributionDomainName:
+    Description: The CloudFront URL the app is reachable at.
+    Value: !GetAtt Distribution.DomainName
+  FunctionName:
+    Description: The Lambda function name, for post-deploy code updates.
+    Value: !Ref ServerFunction
+  AssetsBucketName:
+    Description: The S3 bucket static assets sync to.
+    Value: !Ref AssetsBucket
