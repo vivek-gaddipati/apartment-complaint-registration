@@ -9,6 +9,7 @@ Parameters:
   SsmParameterPrefix:
     Type: String
     Default: /complaint-app/prod/
+    AllowedPattern: "^/.*/$"
     Description: >
       Path prefix under which the app's 6 config values live in SSM
       Parameter Store (all SecureString). Must end with a trailing slash.
@@ -86,7 +87,10 @@ Resources:
               - Sid: DecryptAppConfig
                 Effect: Allow
                 Action: kms:Decrypt
-                Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub "ssm.${AWS::Region}.amazonaws.com"
 
   ServerFunction:
     Type: AWS::Lambda::Function
@@ -98,11 +102,12 @@ Resources:
       Timeout: 15
       Role: !GetAtt ServerFunctionRole.Arn
       Code:
-        # Placeholder — GitHub Actions overwrites this function's code via
-        # `sam deploy` packaging on every real deploy (Task 4). This
-        # minimal inline stub only exists so the template is valid and
-        # deployable in isolation (e.g. for `sam validate`); it is never
-        # what actually serves traffic once Task 4's workflow has run once.
+        # Placeholder — this inline stub is never what serves real traffic.
+        # The GitHub Actions deploy workflow always overwrites this
+        # function's code afterward via a separate
+        # `aws lambda update-function-code` call (Task 4, not part of this
+        # template). This minimal inline stub only exists so the template
+        # is valid and deployable in isolation (e.g. for `sam validate`).
         ZipFile: |
           exports.handler = async () => ({
             statusCode: 200,
@@ -118,25 +123,7 @@ Resources:
     Type: AWS::Lambda::Url
     Properties:
       TargetFunctionArn: !GetAtt ServerFunction.Arn
-      AuthType: AWS_IAM
-
-  ServerFunctionUrlPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: lambda:InvokeFunctionUrl
-      FunctionName: !Ref ServerFunction
-      Principal: cloudfront.amazonaws.com
-      FunctionUrlAuthType: AWS_IAM
-      SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
-
-  LambdaOriginAccessControl:
-    Type: AWS::CloudFront::OriginAccessControl
-    Properties:
-      OriginAccessControlConfig:
-        Name: !Sub "complaint-app-lambda-oac-${AWS::AccountId}"
-        OriginAccessControlOriginType: lambda
-        SigningBehavior: always
-        SigningProtocol: sigv4
+      AuthType: NONE
 
   # ---------------------------------------------------------------------
   # CloudFront
@@ -163,7 +150,6 @@ Resources:
               - !Split
                 - "/"
                 - !GetAtt ServerFunctionUrl.FunctionUrl
-            OriginAccessControlId: !GetAtt LambdaOriginAccessControl.Id
             CustomOriginConfig:
               OriginProtocolPolicy: https-only
               OriginSSLProtocols:
@@ -172,8 +158,9 @@ Resources:
           TargetOriginId: lambda-server
           ViewerProtocolPolicy: redirect-to-https
           AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+          Compress: true
           CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # AWS Managed-CachingDisabled
-          OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3 # AWS Managed-AllViewer
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AWS Managed-AllViewerExceptHostHeader
         CacheBehaviors:
           # Order matters: CloudFront evaluates behaviors top-to-bottom and
           # uses the first match. _next/data/* must be listed before the
@@ -185,17 +172,20 @@ Resources:
             TargetOriginId: lambda-server
             ViewerProtocolPolicy: redirect-to-https
             AllowedMethods: [GET, HEAD, OPTIONS]
+            Compress: true
             CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
-            OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3 # AllViewer
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader
           - PathPattern: BUILD_ID
             TargetOriginId: s3-assets
             ViewerProtocolPolicy: redirect-to-https
             AllowedMethods: [GET, HEAD]
+            Compress: true
             CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # AWS Managed-CachingOptimized
           - PathPattern: _next/*
             TargetOriginId: s3-assets
             ViewerProtocolPolicy: redirect-to-https
             AllowedMethods: [GET, HEAD]
+            Compress: true
             CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized
 
 Outputs:
