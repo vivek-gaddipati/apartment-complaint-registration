@@ -6,7 +6,11 @@ const ADMIN_COOKIE = "admin_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 12; // 12 hours
 
 function getSecret(): string {
-  return process.env.SESSION_SECRET || "default_dev_session_secret_change_in_production_32bytes";
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) {
+    throw new Error("SESSION_SECRET environment variable is not set.");
+  }
+  return secret;
 }
 
 function sign(payload: string): string {
@@ -106,7 +110,10 @@ export function verifyPin(pin: string, flatNo: string, stored: string): boolean 
 }
 
 export function isValidAdminPassword(password: string): boolean {
-  const expected = process.env.ADMIN_PASSWORD || "admin123";
+  const expected = process.env.ADMIN_PASSWORD;
+  if (!expected) {
+    throw new Error("ADMIN_PASSWORD environment variable is not set.");
+  }
   const a = Buffer.from(password);
   const b = Buffer.from(expected);
   return a.length === b.length && timingSafeEqual(a, b);
