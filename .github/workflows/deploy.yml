@@ -52,7 +52,7 @@ jobs:
         run: npx playwright test
 
       - name: Build with OpenNext
-        run: npx open-next build --dangerously-use-unsupported-next-version
+        run: npx open-next build
 
       - name: Copy Lambda bootstrap wrapper into the server function bundle
         run: cp deploy/lambda-bootstrap.mjs .open-next/server-functions/default/bootstrap-handler.mjs
@@ -108,6 +108,7 @@ jobs:
         run: |
           FUNCTION=$(aws cloudformation describe-stacks --stack-name "${STACK_NAME}" \
             --query "Stacks[0].Outputs[?OutputKey=='FunctionName'].OutputValue" --output text)
+          aws lambda wait function-updated --function-name "${FUNCTION}"
           cd .open-next/server-functions/default
           zip -qr /tmp/server-function.zip .
           aws lambda update-function-code --function-name "${FUNCTION}" --zip-file fileb:///tmp/server-function.zip
