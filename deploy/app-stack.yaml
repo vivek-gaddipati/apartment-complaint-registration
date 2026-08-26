@@ -132,6 +132,19 @@ Resources:
       Principal: "*"
       FunctionUrlAuthType: NONE
 
+  # AWS requires this second, separate grant (as of October 2025) for
+  # AuthType: NONE Function URLs — lambda:InvokeFunctionUrl alone is no
+  # longer sufficient; without this, every request 403s with
+  # "AccessDeniedException" even though AuthType is NONE and the URL
+  # permission above is correctly configured. Confirmed by hitting the
+  # deployed Function URL directly and getting exactly that error.
+  ServerFunctionInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ServerFunction
+      Principal: "*"
+
   # ---------------------------------------------------------------------
   # CloudFront
   # ---------------------------------------------------------------------
