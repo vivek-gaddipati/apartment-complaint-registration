@@ -1,0 +1,121 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: complaint-app-prod
+  SSM_PREFIX: /complaint-app/prod/
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Configure AWS credentials (for SSM-sourced test env vars)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Load app config from SSM for the test run
+        run: |
+          for key in GOOGLE_SERVICE_ACCOUNT_EMAIL GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY GOOGLE_SHEET_ID ANTHROPIC_API_KEY ADMIN_PASSWORD SESSION_SECRET; do
+            value=$(aws ssm get-parameter --name "${SSM_PREFIX}${key}" --with-decryption --query "Parameter.Value" --output text --region "${AWS_REGION}")
+            echo "${key}=${value}" >> "$GITHUB_ENV"
+            echo "::add-mask::${value}"
+          done
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright e2e suite
+        run: npx playwright test
+
+      - name: Build with OpenNext
+        run: npx open-next build --dangerously-use-unsupported-next-version
+
+      - name: Copy Lambda bootstrap wrapper into the server function bundle
+        run: cp deploy/lambda-bootstrap.mjs .open-next/server-functions/default/bootstrap-handler.mjs
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-next-build
+          path: .open-next/
+          retention-days: 1
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: open-next-build
+          path: .open-next/
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Deploy infrastructure (S3 bucket, Lambda role, CloudFront)
+        run: |
+          sam deploy \
+            --template-file deploy/app-stack.yaml \
+            --stack-name "${STACK_NAME}" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides SsmParameterPrefix="${SSM_PREFIX}"
+
+      - name: Sync static assets to S3
+        run: |
+          BUCKET=$(aws cloudformation describe-stacks --stack-name "${STACK_NAME}" \
+            --query "Stacks[0].Outputs[?OutputKey=='AssetsBucketName'].OutputValue" --output text)
+          aws s3 sync .open-next/assets "s3://${BUCKET}/_assets" --delete
+
+      - name: Update Lambda function code
+        run: |
+          FUNCTION=$(aws cloudformation describe-stacks --stack-name "${STACK_NAME}" \
+            --query "Stacks[0].Outputs[?OutputKey=='FunctionName'].OutputValue" --output text)
+          cd .open-next/server-functions/default
+          zip -qr /tmp/server-function.zip .
+          aws lambda update-function-code --function-name "${FUNCTION}" --zip-file fileb:///tmp/server-function.zip
+          aws lambda wait function-updated --function-name "${FUNCTION}"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          DIST_DOMAIN=$(aws cloudformation describe-stacks --stack-name "${STACK_NAME}" \
+            --query "Stacks[0].Outputs[?OutputKey=='DistributionDomainName'].OutputValue" --output text)
+          DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?DomainName=='${DIST_DOMAIN}'].Id" --output text)
+          aws cloudfront create-invalidation --distribution-id "${DIST_ID}" --paths "/*"
+
+      - name: Print the app URL
+        run: |
+          aws cloudformation describe-stacks --stack-name "${STACK_NAME}" \
+            --query "Stacks[0].Outputs[?OutputKey=='DistributionDomainName'].OutputValue" --output text
