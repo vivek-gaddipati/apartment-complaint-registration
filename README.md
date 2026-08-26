@@ -33,7 +33,7 @@ SESSION_SECRET=                    # any long random string, e.g. `openssl rand 
 
 ## 4. Deploy
 
-Push to a Git repo and import into Vercel, or run `vercel` from this directory. Add the same environment variables in the Vercel project settings.
+This app deploys to AWS (S3 + Lambda + CloudFront), not Vercel. Pushing to `main` triggers `.github/workflows/deploy.yml`, which lints and runs the Playwright suite, builds the app via OpenNext, and deploys the CloudFormation stack defined in `deploy/app-stack.yaml` — gated behind a required manual approval on GitHub's `production` environment before anything actually ships. See `docs/superpowers/specs/2026-08-26-aws-deployment-pipeline-design.md` for the full architecture and rationale.
 
 ## 5. What's implemented (v1 scope)
 
@@ -45,10 +45,4 @@ Out of scope for v1 (see spec §8): photo upload, WhatsApp integration, real-tim
 
 ## 6. A note on this build
 
-This project was scaffolded and hand-written file-by-file rather than via `create-next-app`/`npm install`, because the sandbox this was built in has no outbound access to the npm registry. The code has been reviewed carefully but has **not** been run through `npm install`, `next build`, or `next lint` in this environment. Please run those locally before deploying:
-
-```bash
-npm install
-npm run lint
-npm run build
-```
+This project was originally scaffolded and hand-written file-by-file rather than via `create-next-app`/`npm install`, because the sandbox it was first built in had no outbound access to the npm registry. Since then, `npm install`, `npm run lint`, and `npm run build` have all been run repeatedly (locally and in CI via `.github/workflows/deploy.yml`) and pass.
