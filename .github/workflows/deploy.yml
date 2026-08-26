@@ -9,6 +9,10 @@ env:
   STACK_NAME: complaint-app-prod
   SSM_PREFIX: /complaint-app/prod/
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -37,8 +41,8 @@ jobs:
         run: |
           for key in GOOGLE_SERVICE_ACCOUNT_EMAIL GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY GOOGLE_SHEET_ID ANTHROPIC_API_KEY ADMIN_PASSWORD SESSION_SECRET; do
             value=$(aws ssm get-parameter --name "${SSM_PREFIX}${key}" --with-decryption --query "Parameter.Value" --output text --region "${AWS_REGION}")
-            echo "${key}=${value}" >> "$GITHUB_ENV"
             echo "::add-mask::${value}"
+            echo "${key}=${value}" >> "$GITHUB_ENV"
           done
 
       - name: Install Playwright browsers
@@ -58,6 +62,8 @@ jobs:
         with:
           name: open-next-build
           path: .open-next/
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 1
 
   deploy:
