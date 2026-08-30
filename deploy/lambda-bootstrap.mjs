@@ -19,6 +19,8 @@ const REQUIRED_KEYS = [
   "SESSION_SECRET",
 ];
 
+const OPTIONAL_KEYS = ["GEMINI_API_KEY", "gemini_api_key"];
+
 let configLoaded = false;
 
 async function loadConfigFromSsm() {
@@ -37,19 +39,39 @@ async function loadConfigFromSsm() {
     throw new Error("AWS_SESSION_TOKEN environment variable is not set.");
   }
 
-  for (const key of REQUIRED_KEYS) {
+  async function fetchParameterValue(key, required) {
     const paramName = encodeURIComponent(`${prefix}${key}`);
     const url = `http://localhost:${EXTENSION_PORT}/systemsmanager/parameters/get?name=${paramName}&withDecryption=true`;
     const res = await fetch(url, {
       headers: { "X-Aws-Parameters-Secrets-Token": token },
     });
+
     if (!res.ok) {
+      if (!required && (res.status === 400 || res.status === 404)) {
+        return null;
+      }
       throw new Error(
         `Failed to load SSM parameter "${prefix}${key}": HTTP ${res.status}`
       );
     }
+
     const body = await res.json();
-    process.env[key] = body.Parameter.Value;
+    return body?.Parameter?.Value ?? null;
+  }
+
+  for (const key of REQUIRED_KEYS) {
+    const value = await fetchParameterValue(key, true);
+    if (!value) {
+      throw new Error(`SSM parameter "${prefix}${key}" is empty.`);
+    }
+    process.env[key] = value;
+  }
+
+  for (const key of OPTIONAL_KEYS) {
+    const value = await fetchParameterValue(key, false);
+    if (value) {
+      process.env[key] = value;
+    }
   }
 
   configLoaded = true;
