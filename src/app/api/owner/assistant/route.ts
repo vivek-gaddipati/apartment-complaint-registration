@@ -148,12 +148,9 @@ function buildKnowledgeContext(matches: KnowledgeMatch[]): string {
 }
 
 function toGeminiTurns(history: ChatHistoryTurn[], question: string) {
-	const turns: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = history
+	const turns = history
 		.filter((t) => (t.role === "user" || t.role === "assistant") && typeof t.text === "string")
-		.map((t) => ({
-			role: t.role === "assistant" ? ("model" as const) : ("user" as const),
-			text: t.text.trim(),
-		}))
+		.map((t) => ({ role: t.role === "assistant" ? "model" : "user", text: t.text.trim() }))
 		.filter((t) => t.text.length > 0)
 		.slice(-8)
 		.map((t) => ({ role: t.role, parts: [{ text: t.text }] }));
@@ -248,15 +245,12 @@ export async function POST(req: NextRequest) {
 		}
 
 		const safeHistory: ChatHistoryTurn[] = Array.isArray(history)
-			? history.reduce<ChatHistoryTurn[]>((acc, h) => {
-					const text = typeof h?.text === "string" ? h.text.trim() : "";
-					if (!text) return acc;
-					acc.push({
+			? history
+					.map((h) => ({
 						role: h?.role === "assistant" ? "assistant" : "user",
-						text,
-					});
-					return acc;
-			  }, [])
+						text: typeof h?.text === "string" ? h.text : "",
+					}))
+					.filter((h) => h.text.trim().length > 0)
 			: [];
 
 		const allChunks = await getAllKnowledgeChunks();
