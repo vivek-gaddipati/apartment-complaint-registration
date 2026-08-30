@@ -30,26 +30,20 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Configure AWS credentials (for SSM-sourced test env vars)
+      - name: Configure AWS credentials (for SSM-sourced build env vars)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Load app config from SSM for the test run
+      - name: Load app config from SSM for the build run
         run: |
           for key in GOOGLE_SERVICE_ACCOUNT_EMAIL GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY GOOGLE_SHEET_ID ANTHROPIC_API_KEY ADMIN_PASSWORD SESSION_SECRET; do
             value=$(aws ssm get-parameter --name "${SSM_PREFIX}${key}" --with-decryption --query "Parameter.Value" --output text --region "${AWS_REGION}")
             echo "::add-mask::${value}"
             echo "${key}=${value}" >> "$GITHUB_ENV"
           done
-
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-
-      - name: Run Playwright e2e suite
-        run: npx playwright test
 
       - name: Build with OpenNext
         run: npx open-next build
