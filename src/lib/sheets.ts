@@ -2,12 +2,16 @@ import { google, sheets_v4 } from "googleapis";
 import {
   Complaint,
   COMPLAINT_COLUMNS,
+  KnowledgeChunk,
+  KnowledgeDocument,
+  KNOWLEDGE_COLUMNS,
   Owner,
   OWNER_COLUMNS,
 } from "./types";
 
 const COMPLAINTS_TAB = "Complaints";
 const OWNERS_TAB = "Owners";
+const KNOWLEDGE_TAB = "KnowledgeBase";
 
 let cachedClient: sheets_v4.Sheets | null = null;
 
@@ -70,6 +74,22 @@ let mockOwners: (Owner & { rowIndex: number })[] = [
   { flat_no: "D-501", owner_name: "Priya Sharma", pin: "", phone: "+91 9876543213", rowIndex: 3 },
 ];
 
+let mockKnowledge: (KnowledgeChunk & { rowIndex: number })[] = [
+  {
+    id: "k-1001",
+    document_id: "doc-1001",
+    source_title: "Society Handbook",
+    source_type: "manual",
+    page_hint: "1",
+    chunk_text:
+      "Visitor entry is permitted between 6 AM and 10 PM. Deliveries must be registered at the gate.",
+    tags: "security,visitor",
+    created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
+    created_by: "admin",
+    rowIndex: 0,
+  },
+];
+
 function hasGoogleCredentials(): boolean {
   return Boolean(
     process.env.GOOGLE_SHEET_ID &&
@@ -127,6 +147,60 @@ function rowToOwner(row: string[], rowIndex: number): Owner {
   });
   obj.rowIndex = rowIndex;
   return obj;
+}
+
+function rowToKnowledge(row: string[], rowIndex: number): KnowledgeChunk {
+  const obj = {} as KnowledgeChunk & { rowIndex: number };
+  KNOWLEDGE_COLUMNS.forEach((key, i) => {
+    (obj as any)[key] = row[i] ?? "";
+  });
+  obj.rowIndex = rowIndex;
+  return obj;
+}
+
+function knowledgeToRow(chunk: Partial<KnowledgeChunk>): string[] {
+  return KNOWLEDGE_COLUMNS.map((key) => (chunk[key] ?? "") as string);
+}
+
+function isMissingRangeError(err: unknown, tabName: string): boolean {
+  if (!err || typeof err !== "object") return false;
+  const anyErr = err as { message?: string; errors?: Array<{ message?: string }> };
+  const needle = `Unable to parse range: ${tabName}!`;
+  if (typeof anyErr.message === "string" && anyErr.message.includes(needle)) {
+    return true;
+  }
+  return Boolean(anyErr.errors?.some((e) => typeof e?.message === "string" && e.message.includes(needle)));
+}
+
+async function ensureTabWithHeader(tabName: string, header: string[]): Promise<void> {
+  const sheets = getClient();
+  const spreadsheetId = getSheetId();
+
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties",
+  });
+
+  const existing = meta.data.sheets?.find((s) => s.properties?.title === tabName);
+  if (!existing) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title: tabName } } }],
+      },
+    });
+  }
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${tabName}!A1:${String.fromCharCode(64 + header.length)}1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [header] },
+  });
+}
+
+async function ensureKnowledgeTab(): Promise<void> {
+  await ensureTabWithHeader(KNOWLEDGE_TAB, KNOWLEDGE_COLUMNS as string[]);
 }
 
 /** Fetches every complaint row. rowIndex on each result is 0-based within the data. */
@@ -274,6 +348,138 @@ export async function getAllOwners(): Promise<Owner[]> {
   });
   const rows = res.data.values ?? [];
   return rows.map((row, i) => rowToOwner(row as string[], i));
+}
+
+/** Fetches all knowledge chunks rows. */
+export async function getAllKnowledgeChunks(): Promise<KnowledgeChunk[]> {
+  if (!hasGoogleCredentials()) {
+    return [...mockKnowledge];
+  }
+
+  const sheets = getClient();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: getSheetId(),
+      range: `${KNOWLEDGE_TAB}!A2:I`,
+    });
+    const rows = res.data.values ?? [];
+    return rows.map((row, i) => rowToKnowledge(row as string[], i));
+  } catch (err) {
+    if (!isMissingRangeError(err, KNOWLEDGE_TAB)) {
+      throw err;
+    }
+    await ensureKnowledgeTab();
+    return [];
+  }
+}
+
+/** Appends one or more knowledge chunks. */
+export async function appendKnowledgeChunks(chunks: KnowledgeChunk[]): Promise<void> {
+  if (chunks.length === 0) return;
+
+  if (!hasGoogleCredentials()) {
+    const start = mockKnowledge.length;
+    mockKnowledge.push(
+      ...chunks.map((chunk, idx) => ({
+        ...chunk,
+        rowIndex: start + idx,
+      }))
+    );
+    return;
+  }
+
+  const sheets = getClient();
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: getSheetId(),
+      range: `${KNOWLEDGE_TAB}!A:I`,
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: {
+        values: chunks.map((chunk) => knowledgeToRow(chunk)),
+      },
+    });
+  } catch (err) {
+    if (!isMissingRangeError(err, KNOWLEDGE_TAB)) {
+      throw err;
+    }
+    await ensureKnowledgeTab();
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: getSheetId(),
+      range: `${KNOWLEDGE_TAB}!A:I`,
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: {
+        values: chunks.map((chunk) => knowledgeToRow(chunk)),
+      },
+    });
+  }
+}
+
+/** Lists knowledge documents derived from grouped chunk rows. */
+export async function listKnowledgeDocuments(): Promise<KnowledgeDocument[]> {
+  const chunks = await getAllKnowledgeChunks();
+  const byDoc = new Map<string, KnowledgeDocument>();
+
+  for (const chunk of chunks) {
+    const existing = byDoc.get(chunk.document_id);
+    if (!existing) {
+      byDoc.set(chunk.document_id, {
+        document_id: chunk.document_id,
+        source_title: chunk.source_title,
+        source_type: chunk.source_type,
+        tags: chunk.tags,
+        chunk_count: 1,
+        created_at: chunk.created_at,
+        created_by: chunk.created_by,
+      });
+      continue;
+    }
+    existing.chunk_count += 1;
+  }
+
+  return [...byDoc.values()].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+}
+
+/** Deletes all knowledge chunks for a document id. Returns removed row count. */
+export async function deleteKnowledgeDocumentById(documentId: string): Promise<number> {
+  if (!documentId.trim()) return 0;
+
+  if (!hasGoogleCredentials()) {
+    const before = mockKnowledge.length;
+    mockKnowledge = mockKnowledge
+      .filter((k) => k.document_id !== documentId)
+      .map((k, i) => ({ ...k, rowIndex: i }));
+    return before - mockKnowledge.length;
+  }
+
+  const all = await getAllKnowledgeChunks();
+  const matches = all.filter((k) => k.document_id === documentId);
+  if (matches.length === 0) return 0;
+
+  const sheets = getClient();
+  const gid = await getTabGid(sheets, KNOWLEDGE_TAB);
+  const rowIndices = matches
+    .map((k) => (k as any).rowIndex as number)
+    .sort((a, b) => b - a);
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: getSheetId(),
+    requestBody: {
+      requests: rowIndices.map((dataRowIndex) => ({
+        deleteDimension: {
+          range: {
+            sheetId: gid,
+            dimension: "ROWS",
+            startIndex: dataRowIndex + 1,
+            endIndex: dataRowIndex + 2,
+          },
+        },
+      })),
+    },
+  });
+
+  return matches.length;
 }
 
 export async function getOwnerByFlat(flatNo: string): Promise<Owner | null> {
