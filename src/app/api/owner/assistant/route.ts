@@ -78,11 +78,14 @@ function localAnswer(question: string, matches: KnowledgeMatch[]): string {
 
 	const excerpts = matches
 		.slice(0, 3)
-		.map((m, i) => `${i + 1}. ${m.chunk_text.slice(0, 220)}${m.chunk_text.length > 220 ? "..." : ""}`)
+		.map(
+			(m, i) =>
+				`${i + 1}. ${m.chunk_text.slice(0, 420)}${m.chunk_text.length > 420 ? "..." : ""}`
+		)
 		.join("\n");
 
 	return [
-		`Based on the knowledge documents, here are the most relevant details for: \"${question.trim()}\"`,
+		`I could not reach the AI model right now, so I am sharing the best matching policy excerpts for: \"${question.trim()}\"`,
 		excerpts,
 	].join("\n\n");
 }
@@ -187,7 +190,7 @@ async function geminiAnswerWithHistory(
 			apiKey,
 			system,
 			contents: toGeminiTurns(history, question),
-			maxOutputTokens: 500,
+			maxOutputTokens: 900,
 			temperature: 0.1,
 		});
 	} catch (err) {
@@ -221,7 +224,7 @@ async function aiAnswerWithHistory(
 
 		const message = await anthropic.messages.create({
 			model: "claude-3-5-sonnet-20241022",
-			max_tokens: 500,
+			max_tokens: 900,
 			system,
 			messages: toClaudeTurns(history, question),
 		});
