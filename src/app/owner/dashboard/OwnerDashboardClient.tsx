@@ -158,6 +158,13 @@ export default function OwnerDashboardClient({
         <span className="text-xl">+</span> Submit New Complaint
       </Link>
 
+      <Link
+        href="/owner/assistant"
+        className="mb-6 flex items-center justify-center gap-2 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-6 py-3 text-sm font-semibold text-indigo-200 transition hover:bg-indigo-500/20"
+      >
+        🤖 Ask Society Assistant
+      </Link>
+
       {/* Metrics Summary Pills */}
       <div className="mb-6 grid grid-cols-3 gap-3">
         <div className="glass-card rounded-2xl p-3.5 text-center">

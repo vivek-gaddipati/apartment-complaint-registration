@@ -12,6 +12,13 @@ Parameters:
     Description: >
       Path prefix under which the app's 6 config values live in SSM
       Parameter Store (all SecureString). Must end with a trailing slash.
+  KnowledgeUploadsPrefix:
+    Type: String
+    Default: knowledge-pdfs/
+    AllowedPattern: "^.+/$"
+    Description: >
+      S3 key prefix inside the assets bucket used for uploaded knowledge PDFs.
+      Must end with a trailing slash.
 
 Resources:
   # ---------------------------------------------------------------------
@@ -90,6 +97,22 @@ Resources:
                 Condition:
                   StringEquals:
                     kms:ViaService: !Sub "ssm.${AWS::Region}.amazonaws.com"
+              - Sid: KnowledgePdfReadWrite
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: !Sub "${AssetsBucket.Arn}/${KnowledgeUploadsPrefix}*"
+              - Sid: KnowledgePdfListPrefix
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt AssetsBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - !Sub "${KnowledgeUploadsPrefix}*"
 
   ServerFunction:
     Type: AWS::Lambda::Function
@@ -115,6 +138,8 @@ Resources:
       Environment:
         Variables:
           SSM_PARAMETER_PREFIX: !Ref SsmParameterPrefix
+          KNOWLEDGE_UPLOADS_BUCKET: !Ref AssetsBucket
+          KNOWLEDGE_UPLOADS_PREFIX: !Ref KnowledgeUploadsPrefix
       Layers:
         - !Sub "{{resolve:ssm:/aws/service/aws-parameters-and-secrets-lambda-extension/x86/latest}}"
 

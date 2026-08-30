@@ -12,9 +12,10 @@ npm run dev
 
 ## 2. Google Sheet setup
 
-1. Create a Google Sheet with two tabs:
+1. Create a Google Sheet with three tabs:
    - **Complaints** — header row: `id, timestamp, flat_no, owner_name, category, description, photo_url, status, priority, assigned_to, admin_notes, resolved_at, owner_rating`
    - **Owners** — header row: `flat_no, owner_name, pin, phone`
+   - **KnowledgeBase** — header row: `id, document_id, source_title, source_type, page_hint, chunk_text, tags, created_at, created_by`
 2. Fill in every row of `Owners` with `flat_no` and `owner_name` for each unit. Leave `pin` and `phone` empty — the app writes the PIN on first login.
 3. In [Google Cloud Console](https://console.cloud.google.com/), create a service account, enable the **Google Sheets API**, and generate a JSON key.
 4. Share the Sheet with the service account's email address (Editor access).
@@ -26,10 +27,18 @@ npm run dev
 GOOGLE_SERVICE_ACCOUNT_EMAIL=      # from the service account JSON
 GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY=  # from the service account JSON, keep \n escapes as-is
 GOOGLE_SHEET_ID=                   # from the Sheet URL
-ANTHROPIC_API_KEY=                 # for the AI Insights Report
+GEMINI_API_KEY=                    # preferred for owner assistant + AI report (supports gemini_api_key too)
+ANTHROPIC_API_KEY=                 # optional fallback provider
 ADMIN_PASSWORD=                    # shared admin password
 SESSION_SECRET=                    # any long random string, e.g. `openssl rand -hex 32`
+KNOWLEDGE_UPLOADS_BUCKET=          # S3 bucket for uploaded PDFs (set in deployed Lambda env)
+KNOWLEDGE_UPLOADS_PREFIX=knowledge-pdfs/  # S3 key prefix, must end with /
 ```
+
+PDF upload constraints for knowledge ingestion:
+
+- Keep each PDF under 25 MB.
+- Store only policy/handbook documents intended for resident-facing answers.
 
 ## 4. Deploy
 
@@ -37,8 +46,8 @@ This app deploys to AWS (S3 + Lambda + CloudFront), not Vercel. Pushing to `main
 
 ## 5. What's implemented (v1 scope)
 
-- Owner: flat + PIN sign-in (first-time PIN setup, PIN hashed with scrypt), submit complaint, view own complaints, star-rate or reopen resolved complaints.
-- Admin: shared-password login, dashboard table (filter by status/category/flat, sort by date/priority, inline status/priority/assigned-to/notes editing), AI Insights Report (date-range filtered, calls Claude, renders structured summary).
+- Owner: flat + PIN sign-in (first-time PIN setup, PIN hashed with scrypt), submit complaint, view own complaints, star-rate or reopen resolved complaints, and ask society policy questions in `/owner/assistant` using the uploaded knowledge base.
+- Admin: shared-password login, dashboard table (filter by status/category/flat, sort by date/priority, inline status/priority/assigned-to/notes editing), owner management, knowledge base management at `/admin/assistant` (PDF/TXT upload, chunking, document delete), AI Insights Report (date-range filtered, calls Gemini first, then fallback providers).
 - All Google Sheets access happens server-side only (API routes / server components) — the client never talks to Sheets or Claude directly.
 
 Out of scope for v1 (see spec §8): photo upload, WhatsApp integration, real-time notifications, multi-tenant support, SLA timers, scheduled reports.

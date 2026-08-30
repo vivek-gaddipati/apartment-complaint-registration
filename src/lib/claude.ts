@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { generateGeminiText, getGeminiApiKey } from "./gemini";
 import { Complaint } from "./types";
 
 export interface InsightsReport {
@@ -29,9 +30,61 @@ Rules:
 - summary: 3-5 plain-English sentences suitable for committee meeting minutes — no jargon.
 - Return ONLY the JSON object, nothing else.`;
 
+function parseJsonObject(raw: string): InsightsReport {
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  const jsonText = jsonMatch ? jsonMatch[0] : raw;
+  return JSON.parse(jsonText) as InsightsReport;
+}
+
+async function generateWithGemini(complaints: Complaint[]): Promise<InsightsReport | null> {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) return null;
+
+  try {
+    const compact = complaints.map((c) => ({
+      id: c.id,
+      timestamp: c.timestamp,
+      flat_no: c.flat_no,
+      category: c.category,
+      description: c.description?.slice(0, 300),
+      status: c.status,
+      priority: c.priority,
+      resolved_at: c.resolved_at || null,
+    }));
+
+    const raw = await generateGeminiText({
+      apiKey,
+      system: SYSTEM_PROMPT,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: `Complaint data (${compact.length} records):\n${JSON.stringify(compact)}`,
+            },
+          ],
+        },
+      ],
+      maxOutputTokens: 2048,
+      temperature: 0.1,
+    });
+
+    if (!raw) return null;
+    return parseJsonObject(raw);
+  } catch (err) {
+    console.warn("Gemini API call failed, trying other providers/fallback:", err);
+    return null;
+  }
+}
+
 export async function generateInsightsReport(
   complaints: Complaint[]
 ): Promise<InsightsReport> {
+  const geminiReport = await generateWithGemini(complaints);
+  if (geminiReport) {
+    return geminiReport;
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
   if (apiKey) {
@@ -63,10 +116,7 @@ export async function generateInsightsReport(
 
       const textBlock = message.content.find((b) => b.type === "text");
       const raw = textBlock && "text" in textBlock ? textBlock.text : "{}";
-      const jsonMatch = raw.match(/\{[\s\S]*\}/);
-      const jsonText = jsonMatch ? jsonMatch[0] : raw;
-
-      return JSON.parse(jsonText) as InsightsReport;
+      return parseJsonObject(raw);
     } catch (err) {
       console.warn("Claude API call failed, using local analytics calculation:", err);
     }

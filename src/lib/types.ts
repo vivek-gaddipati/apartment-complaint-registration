@@ -72,3 +72,37 @@ export const OWNER_COLUMNS: (keyof Owner)[] = [
   "pin",
   "phone",
 ];
+
+export interface KnowledgeChunk {
+  id: string;
+  document_id: string;
+  source_title: string;
+  source_type: string;
+  page_hint: string;
+  chunk_text: string;
+  tags: string;
+  created_at: string;
+  created_by: string;
+}
+
+export interface KnowledgeDocument {
+  document_id: string;
+  source_title: string;
+  source_type: string;
+  tags: string;
+  chunk_count: number;
+  created_at: string;
+  created_by: string;
+}
+
+export const KNOWLEDGE_COLUMNS: (keyof KnowledgeChunk)[] = [
+  "id",
+  "document_id",
+  "source_title",
+  "source_type",
+  "page_hint",
+  "chunk_text",
+  "tags",
+  "created_at",
+  "created_by",
+];
