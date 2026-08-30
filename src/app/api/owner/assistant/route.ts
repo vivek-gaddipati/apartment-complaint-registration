@@ -13,6 +13,7 @@ interface KnowledgeMatch {
 	page_hint: string;
 	source_type: string;
 	chunk_text: string;
+	tags: string;
 	score: number;
 }
 
@@ -21,20 +22,65 @@ interface ChatHistoryTurn {
 	text: string;
 }
 
+const STOPWORDS = new Set([
+	"the",
+	"and",
+	"for",
+	"with",
+	"from",
+	"that",
+	"this",
+	"what",
+	"when",
+	"where",
+	"which",
+	"have",
+	"has",
+	"you",
+	"your",
+	"our",
+	"are",
+	"was",
+	"were",
+	"can",
+	"could",
+	"please",
+	"about",
+	"into",
+	"than",
+	"then",
+	"there",
+	"their",
+	"will",
+	"would",
+	"should",
+	"policy",
+	"society",
+]);
+
 function tokenize(input: string): string[] {
 	return input
 		.toLowerCase()
 		.split(/[^a-z0-9]+/)
 		.map((t) => t.trim())
-		.filter((t) => t.length >= 3);
+		.filter((t) => t.length >= 3 && !STOPWORDS.has(t));
 }
 
-function scoreChunk(text: string, tokens: string[]): number {
+function scoreChunk(text: string, tags: string, sourceTitle: string, tokens: string[]): number {
 	const lower = text.toLowerCase();
+	const lowerTags = (tags || "").toLowerCase();
+	const lowerTitle = (sourceTitle || "").toLowerCase();
 	let score = 0;
 	for (const token of tokens) {
-		if (!lower.includes(token)) continue;
-		score += token.length >= 7 ? 3 : 2;
+		if (lower.includes(token)) {
+			score += token.length >= 7 ? 4 : 3;
+		}
+		if (lowerTags.includes(token)) {
+			score += 2;
+		}
+		if (lowerTitle.includes(token)) {
+			score += 1;
+		}
 	}
 	return score;
 }
@@ -49,11 +95,12 @@ function rankKnowledge(question: string, chunks: Awaited<ReturnType<typeof getAl
 			page_hint: chunk.page_hint,
 			source_type: chunk.source_type,
 			chunk_text: chunk.chunk_text,
-			score: scoreChunk(chunk.chunk_text, tokens),
+			tags: chunk.tags,
+			score: scoreChunk(chunk.chunk_text, chunk.tags, chunk.source_title, tokens),
 		}))
 		.filter((chunk) => chunk.score > 0)
 		.sort((a, b) => b.score - a.score)
-		.slice(0, 6);
+		.slice(0, 10);
 
 	return ranked;
 }
@@ -71,22 +118,78 @@ function uniqueSources(matches: KnowledgeMatch[]): string[] {
 	return sources;
 }
 
+function splitSentences(text: string): string[] {
+	return text
+		.replace(/\s+/g, " ")
+		.split(/(?<=[.!?])\s+/)
+		.map((s) => s.trim())
+		.filter((s) => s.length >= 30);
+}
+
+function sentenceScore(sentence: string, tokens: string[]): number {
+	const lower = sentence.toLowerCase();
+	let score = 0;
+	for (const token of tokens) {
+		if (!lower.includes(token)) continue;
+		score += token.length >= 7 ? 4 : 3;
+	}
+	return score;
+}
+
 function localAnswer(question: string, matches: KnowledgeMatch[]): string {
 	if (matches.length === 0) {
-		return "I could not find this in the society knowledge documents yet. Please contact the admin committee for clarification.";
+		return "I could not find this in the uploaded society knowledge documents. Please contact the admin committee for clarification.";
 	}
 
-	const excerpts = matches
-		.slice(0, 3)
-		.map(
-			(m, i) =>
-				`${i + 1}. ${m.chunk_text.slice(0, 420)}${m.chunk_text.length > 420 ? "..." : ""}`
-		)
+	const tokens = tokenize(question);
+	type Candidate = { text: string; score: number; sourceNo: number };
+	const candidates: Candidate[] = [];
+
+	matches.slice(0, 6).forEach((match, idx) => {
+		const sourceNo = idx + 1;
+		for (const sentence of splitSentences(match.chunk_text)) {
+			const score = sentenceScore(sentence, tokens);
+			if (score <= 0) continue;
+			candidates.push({ text: sentence, score, sourceNo });
+		}
+	});
+
+	candidates.sort((a, b) => b.score - a.score);
+
+	const seenText = new Set<string>();
+	const selected: Candidate[] = [];
+	for (const c of candidates) {
+		const key = c.text.toLowerCase();
+		if (seenText.has(key)) continue;
+		seenText.add(key);
+		selected.push(c);
+		if (selected.length >= 4) break;
+	}
+
+	if (selected.length === 0) {
+		const fallback = matches
+			.slice(0, 2)
+			.map((m, i) => {
+				const sentence = splitSentences(m.chunk_text)[0] || m.chunk_text.slice(0, 220);
+				return `- ${sentence}${sentence.endsWith(".") ? "" : "."} [${i + 1}]`;
+			})
+			.join("\n");
+
+		return [
+			"I could not reach the AI model right now, but here is what the documents state:",
+			fallback,
+			"If you want, ask a narrower follow-up (for example: visitor timing, parking penalties, or clubhouse booking).",
+		].join("\n\n");
+	}
+
+	const bullets = selected
+		.map((s) => `- ${s.text}${s.text.endsWith(".") ? "" : "."} [${s.sourceNo}]`)
 		.join("\n");
 
 	return [
-		`I could not reach the AI model right now, so I am sharing the best matching policy excerpts for: \"${question.trim()}\"`,
-		excerpts,
+		"Here is the answer from the uploaded society documents:",
+		bullets,
+		"I can also summarize this into steps for residents if you want.",
 	].join("\n\n");
 }
 
@@ -179,7 +282,8 @@ async function geminiAnswerWithHistory(
 		"Answer strictly from the supplied Knowledge snippets only.",
 		"If the answer is not present in the snippets, say that the policy is not available in the uploaded knowledge documents.",
 		"Do not invent rules, timings, or penalties.",
-		"Keep the response concise, resident-friendly, and practical.",
+		"Give a complete answer in 4-8 clear sentences, resident-friendly and practical.",
+		"Synthesize across snippets; do not dump raw chunk text.",
 		"When you use facts, cite sources in-line as [1], [2], matching the snippet numbers.",
 		"If the resident asks a follow-up, use prior chat turns for context but still ground facts only in snippets.",
 		"Knowledge snippets:\n" + context,
@@ -190,7 +294,7 @@ async function geminiAnswerWithHistory(
 			apiKey,
 			system,
 			contents: toGeminiTurns(history, question),
-			maxOutputTokens: 900,
+			maxOutputTokens: 1200,
 			temperature: 0.1,
 		});
 	} catch (err) {
@@ -216,7 +320,8 @@ async function aiAnswerWithHistory(
 			"Answer strictly from the supplied Knowledge snippets only.",
 			"If the answer is not present in the snippets, say that the policy is not available in the uploaded knowledge documents.",
 			"Do not invent rules, timings, or penalties.",
-			"Keep the response concise, resident-friendly, and practical.",
+			"Give a complete answer in 4-8 clear sentences, resident-friendly and practical.",
+			"Synthesize across snippets; do not dump raw chunk text.",
 			"When you use facts, cite sources in-line as [1], [2], matching the snippet numbers.",
 			"If the resident asks a follow-up, use prior chat turns for context but still ground facts only in snippets.",
 			"Knowledge snippets:\n" + context,
@@ -224,7 +329,7 @@ async function aiAnswerWithHistory(
 
 		const message = await anthropic.messages.create({
 			model: "claude-3-5-sonnet-20241022",
-			max_tokens: 900,
+			max_tokens: 1200,
 			system,
 			messages: toClaudeTurns(history, question),
 		});
