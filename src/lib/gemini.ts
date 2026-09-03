@@ -1,4 +1,5 @@
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
+const GEMINI_REQUEST_TIMEOUT_MS = 20_000;
 
 const FALLBACK_MODELS = [
   "models/gemini-2.5-flash",
@@ -79,6 +80,7 @@ export async function generateGeminiText(params: {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(GEMINI_REQUEST_TIMEOUT_MS),
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: system }] },
             contents,
