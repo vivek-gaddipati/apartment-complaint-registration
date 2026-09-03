@@ -121,7 +121,7 @@ Resources:
       Runtime: nodejs20.x
       Handler: bootstrap-handler.handler
       MemorySize: 1024
-      Timeout: 30
+      Timeout: 60
       Role: !GetAtt ServerFunctionRole.Arn
       Code:
         # Placeholder — this inline stub is never what serves real traffic.
@@ -226,6 +226,7 @@ Resources:
               OriginProtocolPolicy: https-only
               OriginSSLProtocols:
                 - TLSv1.2
+              OriginReadTimeout: 60
         DefaultCacheBehavior:
           TargetOriginId: lambda-server
           ViewerProtocolPolicy: redirect-to-https
