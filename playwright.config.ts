@@ -9,6 +9,11 @@ loadEnv({ path: path.resolve(__dirname, ".env.local") });
 const PORT = 3100;
 const BASE_URL = `http://localhost:${PORT}`;
 
+const baseUrl = new URL(BASE_URL);
+if (!["localhost", "127.0.0.1"].includes(baseUrl.hostname)) {
+  throw new Error(`E2E tests must run against localhost, got ${BASE_URL}`);
+}
+
 export default defineConfig({
   testDir: "./e2e",
   globalTeardown: "./playwright-teardown.ts",

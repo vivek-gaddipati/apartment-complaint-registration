@@ -25,13 +25,7 @@ export default function OwnerAssistantClient({
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [history, setHistory] = useState<ChatTurn[]>([
-    {
-      id: "intro",
-      role: "assistant",
-      text: "Ask me about society rules, visitor policy, parking, and other handbook topics.",
-    },
-  ]);
+  const [history, setHistory] = useState<ChatTurn[]>([]);
 
   async function ask(e: FormEvent) {
     e.preventDefault();
@@ -42,7 +36,6 @@ export default function OwnerAssistantClient({
     }
 
     const apiHistory: ApiHistoryTurn[] = history
-      .filter((turn) => turn.id !== "intro")
       .map((turn) => ({ role: turn.role, text: turn.text }))
       .slice(0, 8)
       .reverse();
@@ -104,32 +97,17 @@ export default function OwnerAssistantClient({
         </div>
       </div>
 
-      <div data-testid="assistant-chat" className="glass-panel flex flex-1 flex-col gap-3 rounded-2xl p-4">
-        {history.map((turn) => (
-          <div
-            key={turn.id}
-            data-testid="chat-turn"
-            className={`rounded-xl p-3 text-sm leading-relaxed ${
-              turn.role === "user"
-                ? "ml-8 border border-indigo-500/30 bg-indigo-500/10 text-indigo-100"
-                : "mr-8 border border-slate-700 bg-slate-900/50 text-slate-200"
-            }`}
-          >
-            <div data-testid="chat-role" className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              {turn.role === "user" ? "You" : "Assistant"}
-            </div>
-            <p data-testid="chat-text" className="whitespace-pre-wrap">{turn.text}</p>
-            {turn.sources && turn.sources.length > 0 && (
-              <p data-testid="chat-sources" className="mt-2 text-[11px] text-slate-400">
-                Source: {turn.sources.join("; ")}
-              </p>
-            )}
+      <div data-testid="assistant-intro" className="glass-panel rounded-2xl p-4">
+        <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 text-sm leading-relaxed text-slate-200">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            Assistant
           </div>
-        ))}
+          <p>Ask me about society rules, visitor policy, parking, and other handbook topics.</p>
+        </div>
       </div>
 
-      <div className="glass-panel mt-4 rounded-2xl p-4">
-        <form onSubmit={ask} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+      <div data-testid="assistant-question-box" className="glass-panel mt-4 rounded-2xl p-4">
+        <form data-testid="assistant-question-form" onSubmit={ask} className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-300">
               Ask a policy question
@@ -143,6 +121,7 @@ export default function OwnerAssistantClient({
             />
           </div>
           <button
+            data-testid="ask-assistant-button"
             type="submit"
             disabled={loading}
             className="rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-indigo-600/30 hover:from-indigo-500 hover:to-blue-500 transition disabled:opacity-50"
@@ -155,6 +134,36 @@ export default function OwnerAssistantClient({
           <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-400">
             {error}
           </div>
+        )}
+      </div>
+
+      <div data-testid="assistant-chat" className="glass-panel mt-4 flex flex-1 flex-col gap-3 rounded-2xl p-4">
+        {history.length === 0 ? (
+          <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 text-sm text-slate-400">
+            Your conversation will appear here after you ask a question.
+          </div>
+        ) : (
+          history.map((turn) => (
+            <div
+              key={turn.id}
+              data-testid="chat-turn"
+              className={`rounded-xl p-3 text-sm leading-relaxed ${
+                turn.role === "user"
+                  ? "ml-8 border border-indigo-500/30 bg-indigo-500/10 text-indigo-100"
+                  : "mr-8 border border-slate-700 bg-slate-900/50 text-slate-200"
+              }`}
+            >
+              <div data-testid="chat-role" className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                {turn.role === "user" ? "You" : "Assistant"}
+              </div>
+              <p data-testid="chat-text" className="whitespace-pre-wrap">{turn.text}</p>
+              {turn.sources && turn.sources.length > 0 && (
+                <p data-testid="chat-sources" className="mt-2 text-[11px] text-slate-400">
+                  Source: {turn.sources.join("; ")}
+                </p>
+              )}
+            </div>
+          ))
         )}
       </div>
     </main>
