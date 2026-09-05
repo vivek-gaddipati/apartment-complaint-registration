@@ -66,7 +66,7 @@ test.describe.serial("Owner assistant flow", () => {
       await expect(input).toHaveValue(question);
       await page.getByTestId("ask-assistant-button").click();
       await expect(page.getByTestId("chat-turn")).toHaveCount((index + 1) * 2);
-      await expect(page.getByTestId("chat-turn").nth(1).getByTestId("chat-text")).toContainText(question);
+      await expect(page.getByTestId("chat-turn").first().getByTestId("chat-text")).toContainText(question);
     }
 
     // Three user turns + three assistant turns; intro lives in its own box.
@@ -74,12 +74,12 @@ test.describe.serial("Owner assistant flow", () => {
 
     const turns = page.getByTestId("chat-turn");
     const expectedOrder = [
-      { role: "Assistant", text: answers[2] },
       { role: "You", text: questions[2] },
-      { role: "Assistant", text: answers[1] },
+      { role: "Assistant", text: answers[2] },
       { role: "You", text: questions[1] },
-      { role: "Assistant", text: answers[0] },
+      { role: "Assistant", text: answers[1] },
       { role: "You", text: questions[0] },
+      { role: "Assistant", text: answers[0] },
     ];
 
     for (const [index, expected] of expectedOrder.entries()) {
