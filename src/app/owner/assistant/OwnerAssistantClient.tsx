@@ -15,6 +15,12 @@ interface ApiHistoryTurn {
   text: string;
 }
 
+interface ChatExchange {
+  id: string;
+  question?: ChatTurn;
+  answer?: ChatTurn;
+}
+
 export default function OwnerAssistantClient({
   flatNo,
   ownerName,
@@ -80,6 +86,54 @@ export default function OwnerAssistantClient({
     }
   }
 
+  const exchanges: ChatExchange[] = [];
+  for (let index = 0; index < history.length; index += 1) {
+    const turn = history[index];
+    const nextTurn = history[index + 1];
+
+    if (turn.role === "assistant" && nextTurn?.role === "user") {
+      exchanges.push({ id: `${nextTurn.id}-${turn.id}`, question: nextTurn, answer: turn });
+      index += 1;
+      continue;
+    }
+
+    if (turn.role === "user" && nextTurn?.role === "assistant") {
+      exchanges.push({ id: `${turn.id}-${nextTurn.id}`, question: turn, answer: nextTurn });
+      index += 1;
+      continue;
+    }
+
+    exchanges.push({
+      id: turn.id,
+      question: turn.role === "user" ? turn : undefined,
+      answer: turn.role === "assistant" ? turn : undefined,
+    });
+  }
+
+  function renderTurn(turn: ChatTurn) {
+    return (
+      <div
+        key={turn.id}
+        data-testid="chat-turn"
+        className={`rounded-xl p-3 text-sm leading-relaxed ${
+          turn.role === "user"
+            ? "ml-8 border border-indigo-500/30 bg-indigo-500/10 text-indigo-100"
+            : "mr-8 border border-slate-700 bg-slate-900/50 text-slate-200"
+        }`}
+      >
+        <div data-testid="chat-role" className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+          {turn.role === "user" ? "You" : "Assistant"}
+        </div>
+        <p data-testid="chat-text" className="whitespace-pre-wrap">{turn.text}</p>
+        {turn.sources && turn.sources.length > 0 && (
+          <p data-testid="chat-sources" className="mt-2 text-[11px] text-slate-400">
+            Source: {turn.sources.join("; ")}
+          </p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col py-4">
       <div className="glass-panel mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl p-5 shadow-xl">
@@ -143,25 +197,10 @@ export default function OwnerAssistantClient({
             Your conversation will appear here after you ask a question.
           </div>
         ) : (
-          history.map((turn) => (
-            <div
-              key={turn.id}
-              data-testid="chat-turn"
-              className={`rounded-xl p-3 text-sm leading-relaxed ${
-                turn.role === "user"
-                  ? "ml-8 border border-indigo-500/30 bg-indigo-500/10 text-indigo-100"
-                  : "mr-8 border border-slate-700 bg-slate-900/50 text-slate-200"
-              }`}
-            >
-              <div data-testid="chat-role" className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                {turn.role === "user" ? "You" : "Assistant"}
-              </div>
-              <p data-testid="chat-text" className="whitespace-pre-wrap">{turn.text}</p>
-              {turn.sources && turn.sources.length > 0 && (
-                <p data-testid="chat-sources" className="mt-2 text-[11px] text-slate-400">
-                  Source: {turn.sources.join("; ")}
-                </p>
-              )}
+          exchanges.map((exchange) => (
+            <div key={exchange.id} data-testid="chat-exchange" className="flex flex-col gap-2">
+              {exchange.question && renderTurn(exchange.question)}
+              {exchange.answer && renderTurn(exchange.answer)}
             </div>
           ))
         )}

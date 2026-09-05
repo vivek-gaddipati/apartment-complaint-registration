@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
+import { labels } from "@/lib/labels";
 import "./globals.css";
 
 const plusJakarta = Plus_Jakarta_Sans({
@@ -9,8 +10,8 @@ const plusJakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "SocietyComplaints — Apartment Portal",
-  description: "Seamless complaint submission and tracking for apartment residents and management.",
+  title: labels.app.title,
+  description: labels.app.description,
 };
 
 export const viewport: Viewport = {

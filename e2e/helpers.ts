@@ -27,8 +27,13 @@ export async function resetOwnerPin(request: APIRequestContext, flatNo: string) 
 
 async function enterFlatNumber(page: Page, flatNo: string) {
   await page.goto("/owner");
-  await page.getByPlaceholder("e.g. B-402 or A-101").fill(flatNo);
-  await page.getByRole("button", { name: "Continue →" }).click();
+  const flatInput = page.getByPlaceholder("e.g. B-402 or A-101");
+  await flatInput.fill(flatNo);
+  await expect(flatInput).toHaveValue(flatNo);
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/owner/check-flat") && res.request().method() === "POST"),
+    page.getByRole("button", { name: "Continue →" }).click(),
+  ]);
 }
 
 /** Drives the owner login UI through first-time PIN setup and lands on the dashboard. */
