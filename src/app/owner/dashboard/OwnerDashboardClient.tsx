@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Complaint } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 
@@ -15,7 +14,6 @@ export default function OwnerDashboardClient({
   ownerName: string;
   initialComplaints: Complaint[];
 }) {
-  const router = useRouter();
   const [complaints, setComplaints] = useState(initialComplaints);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"all" | "active" | "resolved">("all");
@@ -82,7 +80,7 @@ export default function OwnerDashboardClient({
 
   async function logout() {
     await fetch("/api/owner/logout", { method: "POST" });
-    router.push("/");
+    window.location.assign("/");
   }
 
   const counts = useMemo(() => {

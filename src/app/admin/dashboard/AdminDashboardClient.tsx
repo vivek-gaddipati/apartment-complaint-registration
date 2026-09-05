@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Complaint, STATUSES, PRIORITIES, CATEGORIES } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 
@@ -22,7 +21,6 @@ export default function AdminDashboardClient({
 }: {
   initialComplaints: Complaint[];
 }) {
-  const router = useRouter();
   const [complaints, setComplaints] = useState(initialComplaints);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -75,7 +73,7 @@ export default function AdminDashboardClient({
 
   async function logout() {
     await fetch("/api/admin/logout", { method: "POST" });
-    router.push("/");
+    window.location.assign("/");
   }
 
   async function openPinModal() {
