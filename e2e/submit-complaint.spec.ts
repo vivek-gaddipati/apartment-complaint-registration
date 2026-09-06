@@ -40,4 +40,26 @@ test.describe("Submit complaint flow", () => {
     await page.getByRole("button", { name: "Security" }).click();
     await expect(page.getByText("Auto-suggested priority:")).toBeVisible();
   });
+
+  test("owner can submit an anonymous complaint", async ({ page, request }) => {
+    const description = `Anonymous E2E test complaint ${Date.now()}`;
+
+    await page.getByRole("link", { name: "Submit New Complaint" }).click();
+    await page.getByRole("button", { name: "Noise" }).click();
+    await page.getByPlaceholder(/Describe the issue in detail/).fill(description);
+    await page.getByRole("checkbox", { name: "Submit anonymously" }).check();
+    await page.getByRole("button", { name: "Submit Complaint Ticket →" }).click();
+
+    await expect(page.getByText("Complaint Registered!")).toBeVisible();
+
+    const adminLogin = await request.post("/api/admin/login", {
+      data: { password: process.env.ADMIN_PASSWORD },
+    });
+    expect(adminLogin.ok()).toBeTruthy();
+    const complaintsResponse = await request.get("/api/admin/complaints");
+    const { complaints } = await complaintsResponse.json();
+    const complaint = complaints.find((item: { description: string }) => item.description === description);
+
+    expect(complaint).toMatchObject({ flat_no: "", owner_name: "" });
+  });
 });

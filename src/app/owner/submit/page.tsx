@@ -23,6 +23,7 @@ export default function SubmitComplaintPage() {
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
   const [photoUrl, setPhotoUrl] = useState("");
+  const [isAnonymous, setIsAnonymous] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [complaintId, setComplaintId] = useState<string | null>(null);
@@ -52,6 +53,7 @@ export default function SubmitComplaintPage() {
           category,
           description: description.trim(),
           photo_url: photoUrl.trim(),
+          is_anonymous: isAnonymous,
         }),
       });
       const data = await res.json();
@@ -205,6 +207,21 @@ export default function SubmitComplaintPage() {
               You can paste a link to an uploaded photo or Google Drive image
             </p>
           </div>
+
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-700/60 bg-slate-800/30 p-4 text-sm text-slate-200 transition hover:border-slate-600">
+            <input
+              type="checkbox"
+              checked={isAnonymous}
+              onChange={(e) => setIsAnonymous(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500"
+            />
+            <span>
+              <span className="block font-semibold">Submit anonymously</span>
+              <span className="mt-0.5 block text-xs text-slate-400">
+                Management will receive the complaint without your name or flat number.
+              </span>
+            </span>
+          </label>
 
           {error && (
             <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3.5 text-xs text-rose-400">
