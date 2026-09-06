@@ -41,6 +41,14 @@ test.describe("Submit complaint flow", () => {
     await expect(page.getByText("Auto-suggested priority:")).toBeVisible();
   });
 
+  test("photo attachment offers camera capture when available", async ({ page }) => {
+    await page.getByRole("link", { name: "Submit New Complaint" }).click();
+
+    const photoInput = page.locator('input[type="file"]');
+    await expect(photoInput).toHaveAttribute("accept", "image/*");
+    await expect(photoInput).toHaveAttribute("capture", "environment");
+  });
+
   test("owner can submit an anonymous complaint", async ({ page, request }) => {
     const description = `Anonymous E2E test complaint ${Date.now()}`;
 

@@ -18,11 +18,39 @@ const CATEGORY_ICONS: Record<string, string> = {
   Other: "📌",
 };
 
+const MAX_PHOTO_DATA_URL_LENGTH = 45_000;
+
+async function compressPhoto(file: File): Promise<string> {
+  const sourceUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("The selected image could not be read."));
+      element.src = sourceUrl;
+    });
+    const scale = Math.min(1, 640 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    for (const quality of [0.7, 0.55, 0.4, 0.25]) {
+      const dataUrl = canvas.toDataURL("image/jpeg", quality);
+      if (dataUrl.length <= MAX_PHOTO_DATA_URL_LENGTH) return dataUrl;
+    }
+    throw new Error("This photo is too detailed to attach. Try taking it from farther away.");
+  } finally {
+    URL.revokeObjectURL(sourceUrl);
+  }
+}
+
 export default function SubmitComplaintPage() {
   const router = useRouter();
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
   const [photoUrl, setPhotoUrl] = useState("");
+  const [photoName, setPhotoName] = useState("");
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -30,6 +58,26 @@ export default function SubmitComplaintPage() {
   const [copied, setCopied] = useState(false);
 
   const suggestedPriority = category ? suggestPriority(category) : null;
+
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please select an image file.");
+      return;
+    }
+
+    setError("");
+    try {
+      setPhotoUrl(await compressPhoto(file));
+      setPhotoName(file.name || "Camera photo");
+    } catch (err) {
+      setPhotoUrl("");
+      setPhotoName("");
+      setError(err instanceof Error ? err.message : "The photo could not be attached.");
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -191,21 +239,39 @@ export default function SubmitComplaintPage() {
             />
           </div>
 
-          {/* Optional Photo URL */}
+          {/* Optional Photo */}
           <div>
             <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-300">
-              Photo URL <span className="text-slate-500 font-normal lowercase">(optional)</span>
+              Photo <span className="text-slate-500 font-normal lowercase">(optional)</span>
             </label>
-            <input
-              type="url"
-              value={photoUrl}
-              onChange={(e) => setPhotoUrl(e.target.value)}
-              placeholder="https://drive.google.com/... or image link"
-              className="input-dark w-full rounded-xl px-4 py-3 text-sm text-white focus:ring-2 focus:ring-indigo-500"
-            />
-            <p className="mt-1 text-[11px] text-slate-500">
-              You can paste a link to an uploaded photo or Google Drive image
-            </p>
+            {photoUrl ? (
+              <div className="flex items-center gap-3 rounded-xl border border-slate-700/60 bg-slate-800/30 p-3">
+                <img src={photoUrl} alt="Selected complaint attachment" className="h-16 w-16 rounded-lg object-cover" />
+                <p className="min-w-0 flex-1 truncate text-xs text-slate-300">{photoName || "Attached photo"}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPhotoUrl("");
+                    setPhotoName("");
+                  }}
+                  className="rounded-lg border border-rose-500/30 px-2.5 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/10"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-slate-600 bg-slate-800/30 px-4 py-5 text-sm font-semibold text-slate-300 transition hover:border-indigo-400 hover:text-white">
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handlePhotoChange}
+                  className="sr-only"
+                />
+                Take or choose a photo
+              </label>
+            )}
+            <p className="mt-1 text-[11px] text-slate-500">Uses your rear camera when available.</p>
           </div>
 
           <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-700/60 bg-slate-800/30 p-4 text-sm text-slate-200 transition hover:border-slate-600">
