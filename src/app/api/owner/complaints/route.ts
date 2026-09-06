@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { category, description, photo_url } = await req.json();
+    const { category, description, photo_url, is_anonymous } = await req.json();
 
     if (!CATEGORIES.includes(category)) {
       return NextResponse.json({ error: "Invalid category." }, { status: 400 });
@@ -37,8 +37,8 @@ export async function POST(req: NextRequest) {
     const complaint: Complaint = {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
-      flat_no: session.flat_no,
-      owner_name: session.owner_name,
+      flat_no: is_anonymous === true ? "" : session.flat_no,
+      owner_name: is_anonymous === true ? "" : session.owner_name,
       category,
       description: description.trim(),
       photo_url: typeof photo_url === "string" ? photo_url : "",
