@@ -9,6 +9,8 @@ import { suggestPriority } from "@/lib/priority";
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
+const MAX_PHOTO_DATA_URL_LENGTH = 45_000;
+
 export async function GET() {
   const session = getOwnerSession();
   if (!session) {
@@ -32,6 +34,9 @@ export async function POST(req: NextRequest) {
     }
     if (typeof description !== "string" || !description.trim()) {
       return NextResponse.json({ error: "Description is required." }, { status: 400 });
+    }
+    if (typeof photo_url === "string" && photo_url.startsWith("data:image/") && photo_url.length > MAX_PHOTO_DATA_URL_LENGTH) {
+      return NextResponse.json({ error: "Attached photo is too large." }, { status: 400 });
     }
 
     const complaint: Complaint = {
